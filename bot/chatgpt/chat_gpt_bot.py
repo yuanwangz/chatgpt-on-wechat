@@ -61,6 +61,7 @@ class ChatGPTBot(Bot, OpenAIImage):
             # 移除包含 [下载链接] 的行和前后的空白行
             cleaned_msg = re.sub(r'^\s*.*\[下载链接\].*\n', '', cleaned_msg, flags=re.MULTILINE)
             cleaned_msg = re.sub(r'^\s*\n+', '', cleaned_msg)
+            cleaned_msg = re.sub(r'\[\[\d+\]\(https?:\/\/[^\]]+\)\]', '', cleaned_msg)
 
         return 0, cleaned_msg
 
