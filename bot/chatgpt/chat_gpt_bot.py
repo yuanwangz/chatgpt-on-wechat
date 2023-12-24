@@ -1,7 +1,7 @@
 # encoding:utf-8
 
 import time
-
+import re
 import openai
 import openai.error
 import requests
@@ -42,6 +42,27 @@ class ChatGPTBot(Bot, OpenAIImage):
             "request_timeout": conf().get("request_timeout", None),  # 请求超时时间，openai接口默认设置为600，对于难问题一般需要较长时间
             "timeout": conf().get("request_timeout", None),  # 重试超时时间，在这个时间内，将会自动重试
         }
+        
+    def process_message(self,msg):
+		# 移除包含特定关键词的Markdown代码块
+        cleaned_msg = re.sub(r'```[\s\S]*?(prompt|search\(|mclick\()[\s\S]*?```', '', msg)
+
+		# 提取并下载图片
+        image_regex = re.compile(r'!\[image]\((.*?)\)')
+        matches = image_regex.findall(cleaned_msg)
+        # 检查是否有找到图片链接
+        if len(matches) > 0:
+            # 有图片链接时，返回 imgflag=1 和第一个图片链接
+            return 1, matches[0]
+        else:
+            # 没有图片链接时，返回 imgflag=0 和清理后的消息
+            # 移除包含 ![image] 的行和前后的空白行
+            cleaned_msg = re.sub(r'^\s*.*!\[image\].*\n', '', cleaned_msg, flags=re.MULTILINE)
+            # 移除包含 [下载链接] 的行和前后的空白行
+            cleaned_msg = re.sub(r'^\s*.*\[下载链接\].*\n', '', cleaned_msg, flags=re.MULTILINE)
+            cleaned_msg = re.sub(r'^\s*\n+', '', cleaned_msg)
+
+        return 0, cleaned_msg
 
     def reply(self, query, context=None):
         # acquire reply content
@@ -84,14 +105,24 @@ class ChatGPTBot(Bot, OpenAIImage):
                     reply_content["completion_tokens"],
                 )
             )
-            if reply_content["completion_tokens"] == 0 and len(reply_content["content"]) > 0:
-                reply = Reply(ReplyType.ERROR, reply_content["content"])
-            elif reply_content["completion_tokens"] > 0:
-                self.sessions.session_reply(reply_content["content"], session_id, reply_content["total_tokens"])
-                reply = Reply(ReplyType.TEXT, reply_content["content"])
+            self.sessions.session_reply(reply_content["content"], session_id, reply_content["total_tokens"])
+            imgflag, replyContent = self.process_message(reply_content["content"])
+            if imgflag==1:
+                reply = Reply(ReplyType.IMAGE_URL, replyContent)
             else:
-                reply = Reply(ReplyType.ERROR, reply_content["content"])
-                logger.debug("[CHATGPT] reply {} used 0 tokens.".format(reply_content))
+                reply = Reply(ReplyType.TEXT, replyContent)
+#            if replyContent is not None and replyContent != "":
+#                reply = Reply(ReplyType.TEXT, replyContent)
+#            else:
+#                logger.debug("The string is either None or empty.")
+#            if reply_content["completion_tokens"] == 0 and len(reply_content["content"]) > 0:
+#                reply = Reply(ReplyType.ERROR, reply_content["content"])
+#            elif reply_content["completion_tokens"] > 0:
+#                self.sessions.session_reply(reply_content["content"], session_id, reply_content["total_tokens"])
+#                reply = Reply(ReplyType.TEXT, reply_content["content"])
+#            else:
+#                reply = Reply(ReplyType.ERROR, reply_content["content"])
+#                logger.debug("[CHATGPT] reply {} used 0 tokens.".format(reply_content))
             return reply
 
         elif context.type == ContextType.IMAGE_CREATE:
